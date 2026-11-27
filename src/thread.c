@@ -104,6 +104,11 @@ uint32_t xsdk_thread_hardware_thread(void)
 	return processor_control_region()[PCR_CURRENT_PROCESSOR];
 }
 
+uint32_t xsdk_thread_current_object(void)
+{
+	return *(volatile uint32_t *)(processor_control_region() + PCR_CURRENT_THREAD);
+}
+
 NTSTATUS xsdk_thread_sleep(uint32_t milliseconds)
 {
 	// A negative interval is relative, in 100 ns units.

@@ -32,6 +32,9 @@ NTSTATUS xsdk_thread_set_priority(HANDLE thread, int32_t priority, int32_t *prev
 HANDLE xsdk_pthread_handle(pthread_t thread);
 // The hardware thread the calling thread runs on.
 uint32_t xsdk_thread_hardware_thread(void);
+// The calling thread's kernel thread object, from its processor control region: no TLS lookup or call into the kernel,
+// so a cheap test of which thread is calling.
+uint32_t xsdk_thread_current_object(void);
 NTSTATUS xsdk_thread_sleep(uint32_t milliseconds);
 // Totals across all threads, to show that a wait sleeps rather than spins.
 void xsdk_thread_wait_counts(uint32_t *yields, uint32_t *blocking_waits);
