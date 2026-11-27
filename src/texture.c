@@ -551,8 +551,10 @@ static __attribute__((noinline)) void put_tiles(volatile uint32_t *image, uint32
 }
 
 // Rows of a level's blocks in a face or slice, from first_row, copied in from data or out to it, row_bytes apart.
-static void copy_rows(const XsdkTexture *texture, uint32_t level, uint32_t slice, uint32_t first_row,
-	uint32_t row_count, uint8_t *data, uint32_t row_bytes, bool out)
+// Columns first_column to first_column + column_count of the rows, data holding the first of them from its start;
+// whole rows (column_count 0) put whole tiles at once.
+static void copy_rect(const XsdkTexture *texture, uint32_t level, uint32_t slice, uint32_t first_column,
+	uint32_t column_count, uint32_t first_row, uint32_t row_count, uint8_t *data, uint32_t row_bytes, bool out)
 {
 	assert(level < texture->levels && slice < texture->depth && first_row + row_count <= level_rows(texture, level));
 	const FormatInfo *const info = &formats[texture->format];
@@ -562,21 +564,25 @@ static void copy_rows(const XsdkTexture *texture, uint32_t level, uint32_t slice
 	const uint32_t face = texture->dimension == XSDK_TEXTURE_CUBE ? slice : 0;
 	volatile uint32_t *const image = texture->texels + (place.offset_bytes + face * place.face_bytes) / WORD_BYTES;
 	const uint32_t block_bytes = 1u << info->block_bytes_log2;
-	const uint32_t columns = xsdk_texture_blocks(level_size(texture->width, level), info->block_log2);
+	const uint32_t level_columns = xsdk_texture_blocks(level_size(texture->width, level), info->block_log2);
+	const bool part = column_count != 0;
+	assert(!part || first_column + column_count <= level_columns);
+	const uint32_t start = part ? first_column : 0;
+	const uint32_t columns = part ? first_column + column_count : level_columns;
 	// A run goes as whole words, read from or written to the rows as words, so they must be word-aligned; unaligned
 	// rows go a block at a time.
 	const bool aligned = ((uintptr_t)data | row_bytes) % WORD_BYTES == 0;
-	const uint32_t run = aligned ? run_blocks(texture, info, columns) : 1;
+	const uint32_t run = aligned ? run_blocks(texture, info, level_columns) : 1;
 	const uint32_t run_bytes = run * block_bytes;
 	// Uploads from aligned rows put whole tiles at once, from tiles_x; the blocks around them go in runs.
 	const uint32_t to_tile = (TILE_BLOCKS - place.x % TILE_BLOCKS) % TILE_BLOCKS;
-	const uint32_t tiles_x = texture->tiled && aligned && !out && to_tile < columns ? to_tile : columns;
+	const uint32_t tiles_x = texture->tiled && aligned && !out && !part && to_tile < columns ? to_tile : columns;
 	const uint32_t tiles = (columns - tiles_x) / TILE_BLOCKS;
 	const uint32_t tile_bits =
 		tiles ? xsdk_tiled_tile_bits(texture->dimension == XSDK_TEXTURE_3D, info->block_bytes_log2) : 0;
 	for (uint32_t y = 0; y < row_count; y++) {
-		uint8_t *const row = data + y * row_bytes;
-		uint32_t x = 0;
+		uint8_t *const row = data + y * row_bytes - start * block_bytes;
+		uint32_t x = start;
 		while (x < columns) {
 			if (x == tiles_x && tiles) {
 				const uint32_t first = block_offset(texture, &place, place.x + x, place.y + first_row + y, slice);
@@ -593,6 +599,22 @@ static void copy_rows(const XsdkTexture *texture, uint32_t level, uint32_t slice
 			x += whole ? run : 1;
 		}
 	}
+}
+
+static void copy_rows(const XsdkTexture *texture, uint32_t level, uint32_t slice, uint32_t first_row,
+	uint32_t row_count, uint8_t *data, uint32_t row_bytes, bool out)
+{
+	copy_rect(texture, level, slice, 0, 0, first_row, row_count, data, row_bytes, out);
+}
+
+void xsdk_texture_upload_slice_rect(XsdkTexture *texture, uint32_t level, uint32_t slice, uint32_t first_column,
+	uint32_t column_count, uint32_t first_row, uint32_t row_count, const void *data, uint32_t row_bytes)
+{
+	if (!column_count || !row_count)
+		return;
+	copy_rect(texture, level, slice, first_column, column_count, first_row, row_count, (uint8_t *)(uintptr_t)data,
+		row_bytes, false);
+	__asm__ volatile("sync" ::: "memory");
 }
 
 void xsdk_texture_upload(XsdkTexture *texture, uint32_t level, const void *data, uint32_t row_bytes)

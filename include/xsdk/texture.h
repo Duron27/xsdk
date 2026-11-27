@@ -197,6 +197,10 @@ void xsdk_texture_upload_slice_rows(XsdkTexture *texture, uint32_t level, uint32
 	uint32_t row_count, const void *data, uint32_t row_bytes);
 void xsdk_texture_download_slice_rows(const XsdkTexture *texture, uint32_t level, uint32_t slice, uint32_t first_row,
 	uint32_t row_count, void *data, uint32_t row_bytes);
+// xsdk_texture_upload_slice_rows for blocks first_column to first_column + column_count of each row alone, data
+// holding the first of them: an update of part of a wide texture, without reading back the rest of its rows.
+void xsdk_texture_upload_slice_rect(XsdkTexture *texture, uint32_t level, uint32_t slice, uint32_t first_column,
+	uint32_t column_count, uint32_t first_row, uint32_t row_count, const void *data, uint32_t row_bytes);
 // Has the texture return, as red, green, blue and alpha, the XSDK_CHANNEL_* each names; xsdk_texture_init returns
 // the format's own channels.
 void xsdk_texture_swizzle(XsdkTexture *texture, const uint32_t channels[4]);

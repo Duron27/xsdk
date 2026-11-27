@@ -197,8 +197,40 @@ static void check_upload_time(const TimedUpload *t)
 	xsdk_texture_free(&texture);
 }
 
+// A rectangle of a wide texture, uploaded alone, leaves what the same rows uploaded whole with it in them do.
+static bool rect_upload_matches(void)
+{
+	enum { WIDTH = 300, HEIGHT = 70, X = 37, Y = 13, W = 50, H = 21, BYTES = 4 };
+	XsdkTexture rect = { .texels = NULL };
+	XsdkTexture whole = { .texels = NULL };
+	const UploadCase c = { "A8R8G8B8 300x70, a rectangle", XSDK_TEXTURE_2D, XSDK_FORMAT_A8R8G8B8, WIDTH, HEIGHT, 1, 1,
+		BYTES, 0 };
+	bool same = make_texture(&rect, &c) && make_texture(&whole, &c);
+	static uint8_t rows[WIDTH * HEIGHT * BYTES];
+	static uint8_t part[W * H * BYTES];
+	if (same) {
+		for (uint32_t i = 0; i < sizeof rows; i++)
+			rows[i] = (uint8_t)(i * 2654435761u >> 11);
+		xsdk_texture_upload_slice_rows(&rect, 0, 0, 0, HEIGHT, rows, WIDTH * BYTES);
+		for (uint32_t i = 0; i < sizeof part; i++)
+			part[i] = (uint8_t)(i * 40503u >> 5);
+		// Unaligned to the runs and the tiles on purpose.
+		xsdk_texture_upload_slice_rect(&rect, 0, 0, X, W, Y, H, part, W * BYTES);
+		for (uint32_t y = 0; y < H; y++)
+			memcpy(rows + ((Y + y) * WIDTH + X) * BYTES, part + y * W * BYTES, W * BYTES);
+		xsdk_texture_upload_slice_rows(&whole, 0, 0, 0, HEIGHT, rows, WIDTH * BYTES);
+		same = count_differences(&rect, &whole, &c) == 0;
+	}
+	if (rect.texels)
+		xsdk_texture_free(&rect);
+	if (whole.texels)
+		xsdk_texture_free(&whole);
+	return same;
+}
+
 void test_upload(void)
 {
+	check("uploads: a rectangle uploaded alone writes what its rows uploaded whole do", rect_upload_matches());
 	bool same = true;
 	for (uint32_t i = 0; i < sizeof cases / sizeof cases[0]; i++)
 		same = upload_matches(&cases[i]) && same;
